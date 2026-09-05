@@ -9,17 +9,18 @@ from openpyxl import Workbook
 from google import genai
 from google.genai import types as gtypes
 
-# Ключи
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAGEi92phkV4M6FH69VcsDEQ8_0kK7Orypc")
+# Вставь сюда НОВЫЙ токен из BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "Token for the bot Помощница Фаина @faina_school_bot has been revoked. New token is:
+
+8788964110:AAGikuaBly9IG8VqaCDE5GeCCvg4Aord8SM")
 GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6JT_g3Az9mFgTYYQq2Ljw62em6y46E_sPuEOOzL3vRTWw")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 ai_client = genai.Client(api_key=GEMINI_KEY)
 
-# Простой веб-сервер для удовлетворения требований Render Web Service
 async def handle_health_check(request):
-    return web.Response(text="Faina Bot is running!")
+    return web.Response(text="Faina Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
@@ -94,6 +95,7 @@ async def handle_message(message: types.Message):
 
 async def main():
     await start_web_server()
+    # Принудительно очищаем старые сессии и вебхуки
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
