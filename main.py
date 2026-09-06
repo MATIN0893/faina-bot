@@ -1,5 +1,6 @@
 import os
 import asyncio
+import traceback
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -25,20 +26,37 @@ async def start_cmd(message: types.Message):
 async def handle_message(message: types.Message):
     if not message.text:
         return
-    try:
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-3.6-flash",
-            contents=message.text,
-        )
-        text = getattr(response, "text", None)
-        if text:
-            await message.answer(text)
-        else:
-            await message.answer("Не удалось получить ответ от AI.")
-    except Exception as e:
-        print(f"Ошибка Gemini: {e}")
-        await message.answer("Произошла ошибка при обработке запроса. Попробуй ещё раз.")
+
+    prompt = (
+        "Ты Фаина — вежливый и полезный AI-помощник. "
+        "Отвечай на том же языке, на котором написал пользователь. "
+        "Если пользователь пишет на таджикском, отвечай на таджикском. "
+        "Не упоминай внутренние ошибки, API или технические детали.\n\n"
+        f"Сообщение пользователя:\n{message.text}"
+    )
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-3.6-flash",
+                contents=prompt,
+            )
+            text = getattr(response, "text", None)
+            if text:
+                await message.answer(text)
+                return
+            last_error = "Gemini returned an empty response"
+        except Exception as e:
+            last_error = repr(e)
+            print(f"Ошибка Gemini, попытка {attempt + 1}/3: {last_error}")
+            traceback.print_exc()
+            if attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+
+    print(f"Gemini окончательно не ответил: {last_error}")
+    await message.answer("Сейчас временно не удалось получить ответ. Попробуй ещё раз через несколько секунд.")
 
 async def handle_health_check(request):
     return web.Response(text="Bot is live!")
