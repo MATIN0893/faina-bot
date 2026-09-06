@@ -5,33 +5,41 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from google import genai
 
-# Инициализация токенов
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 
-# Настройка нового SDK Gemini
-client = genai.Client(api_key=GEMINI_KEY)
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is not set")
+if not GEMINI_KEY:
+    raise RuntimeError("GEMINI_KEY is not set")
 
+client = genai.Client(api_key=GEMINI_KEY)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
-    await message.answer("Привет! Я Фаина, ваш помощница. Чем могу помочь?")
+    await message.answer("Привет! Я Фаина, ваш помощник. Чем могу помочь?")
 
 @dp.message()
 async def handle_message(message: types.Message):
+    if not message.text:
+        return
     try:
-        # Передаем текст через contents=message.text
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=message.text
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-3.6-flash",
+            contents=message.text,
         )
-        await message.answer(response.text)
+        text = getattr(response, "text", None)
+        if text:
+            await message.answer(text)
+        else:
+            await message.answer("Не удалось получить ответ от AI.")
     except Exception as e:
-        print(f"Ошибка Gemini: {e}")  # Выведет точную ошибку в консоль Render
-        await message.answer("Произошла ошибка при обработке запроса.")
-# Фейковый веб-сервер для порта Render
+        print(f"Ошибка Gemini: {e}")
+        await message.answer("Произошла ошибка при обработке запроса. Попробуй ещё раз.")
+
 async def handle_health_check(request):
     return web.Response(text="Bot is live!")
 
