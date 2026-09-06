@@ -20,7 +20,6 @@ if not GEMINI_KEY:
 if not WEBHOOK_SECRET:
     raise RuntimeError("WEBHOOK_SECRET is not set")
 
-# One SDK attempt per model: no hidden retry delays when Gemini is overloaded.
 client = genai.Client(
     api_key=GEMINI_KEY,
     http_options=genai_types.HttpOptions(
@@ -39,7 +38,6 @@ async def start_cmd(message: types.Message):
 
 
 async def ask_gemini(prompt: str):
-    # Fast model first; one immediate fallback. No 3x retry loop.
     for model in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
         started = time.monotonic()
         try:
@@ -99,7 +97,7 @@ async def on_startup(bot: Bot):
     print(f"Webhook set: {webhook_url}")
 
 
-async def main():
+def main():
     app = web.Application()
     app.router.add_get("/", health_check)
 
@@ -120,5 +118,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
