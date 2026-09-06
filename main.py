@@ -43,7 +43,7 @@ async def handle_message(message: types.Message):
         os.environ["GEMINI_API_KEY"] = api_key
         ai_client = genai.Client()
 
-        # Используем актуальное имя модели
+        # Используем актуальное имя модели согласно требованию API
         MODEL_NAME = 'gemini-2.5-flash'
 
         if message.photo:
