@@ -6,10 +6,9 @@ from aiogram.types import FSInputFile
 from docx import Document
 from openpyxl import Workbook
 from google import genai
-from google.genai import types as gtypes
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAF2HPogUT5TZritKmvA2UOQKIGRwIG-XHI")
-GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6IJ-VfH6rpwXzsVe4AJeNvWVEapP8js9j3O1nQke0-ZAg")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -36,12 +35,16 @@ async def handle_message(message: types.Message):
     )
 
     try:
-        current_gemini_key = os.environ.get("GEMINI_KEY", GEMINI_KEY)
-        if not current_gemini_key:
-            await status_msg.edit_text("Ошибка: Не указан GEMINI_KEY в настройках Render.")
+        api_key = os.environ.get("GEMINI_KEY") or GEMINI_KEY
+        if not api_key:
+            await status_msg.edit_text("Ошибка: Переменная GEMINI_KEY пуста в Render.")
             return
 
-        ai_client = genai.Client(api_key=current_gemini_key)
+        os.environ["GEMINI_API_KEY"] = api_key
+        ai_client = genai.Client()
+
+        # Используем актуальное имя модели
+        MODEL_NAME = 'gemini-2.5-flash'
 
         if message.photo:
             photo = message.photo[-1]
@@ -49,16 +52,16 @@ async def handle_message(message: types.Message):
             photo_bytes = await bot.download_file(file_info.file_path)
             
             response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=MODEL_NAME,
                 contents=[
                     sys_prompt,
-                    gtypes.Part.from_bytes(data=photo_bytes.read(), mime_type='image/jpeg'),
+                    genai.types.Part.from_bytes(data=photo_bytes.read(), mime_type='image/jpeg'),
                     message.caption or "Считай текст/список с этого фото и оформи аккуратно."
                 ]
             )
         else:
             response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=MODEL_NAME,
                 contents=f"{sys_prompt}\n\nЗапрос пользователя: {message.text}"
             )
 
