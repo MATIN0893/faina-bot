@@ -1,21 +1,26 @@
 import os
-import asyncio
+import time
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from google import genai
 from google.genai import types as genai_types
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
+BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://faina-bot-new.onrender.com").rstrip("/")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 if not GEMINI_KEY:
     raise RuntimeError("GEMINI_KEY is not set")
+if not WEBHOOK_SECRET:
+    raise RuntimeError("WEBHOOK_SECRET is not set")
 
-# Short timeout + one SDK attempt prevents Gemini's built-in retries from
-# making Telegram users wait tens of seconds when a model is overloaded.
+# One SDK attempt per model: no hidden retry delays when Gemini is overloaded.
 client = genai.Client(
     api_key=GEMINI_KEY,
     http_options=genai_types.HttpOptions(
@@ -27,25 +32,32 @@ client = genai.Client(
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer("Привет! Я Фаина, ваш помощник. Чем могу помочь?")
 
+
 async def ask_gemini(prompt: str):
-    # Fast model first; reliable fallback if the first model is temporarily busy.
+    # Fast model first; one immediate fallback. No 3x retry loop.
     for model in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
+        started = time.monotonic()
         try:
             response = await client.aio.models.generate_content(
                 model=model,
                 contents=prompt,
             )
             text = getattr(response, "text", None)
+            elapsed = time.monotonic() - started
             if text:
-                return text, model
-            print(f"Gemini returned empty response from {model}")
+                print(f"Gemini OK model={model} seconds={elapsed:.2f}")
+                return text
+            print(f"Gemini empty model={model} seconds={elapsed:.2f}")
         except Exception as e:
-            print(f"Gemini {model} failed: {type(e).__name__}: {e}")
-    return None, None
+            elapsed = time.monotonic() - started
+            print(f"Gemini failed model={model} seconds={elapsed:.2f} error={type(e).__name__}: {e}")
+    return None
+
 
 @dp.message()
 async def handle_message(message: types.Message):
@@ -60,37 +72,53 @@ async def handle_message(message: types.Message):
         f"Сообщение пользователя:\n{message.text}"
     )
 
-    # Telegram shows that the bot is working while Gemini generates the answer.
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
     except Exception:
         pass
 
-    text, model = await ask_gemini(prompt)
-
+    text = await ask_gemini(prompt)
     if text:
-        print(f"Gemini response OK: {model}")
         await message.answer(text)
     else:
-        print("Gemini failed on both primary and fallback models")
         await message.answer("Сейчас AI временно занят. Попробуй ещё раз через несколько секунд.")
 
-async def handle_health_check(request):
+
+async def health_check(request):
     return web.Response(text="Bot is live!")
 
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle_health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
+
+async def on_startup(bot: Bot):
+    webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
+    await bot.set_webhook(
+        url=webhook_url,
+        secret_token=WEBHOOK_SECRET,
+        drop_pending_updates=True,
+        allowed_updates=dp.resolve_used_update_types(),
+    )
+    print(f"Webhook set: {webhook_url}")
+
 
 async def main():
-    await start_web_server()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    app = web.Application()
+    app.router.add_get("/", health_check)
+
+    dp.startup.register(on_startup)
+
+    webhook_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=WEBHOOK_SECRET,
+        handle_in_background=True,
+    )
+    webhook_handler.register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
+
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Faina bot starting on port {port}")
+    web.run_app(app, host="0.0.0.0", port=port)
+
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
