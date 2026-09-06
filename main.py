@@ -22,15 +22,15 @@ async def start_cmd(message: types.Message):
 @dp.message()
 async def handle_message(message: types.Message):
     try:
-        # Новый синтаксис генерации ответа
+        # Передаем текст через contents=message.text
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=message.text,
+            contents=message.text
         )
         await message.answer(response.text)
     except Exception as e:
+        print(f"Ошибка Gemini: {e}")  # Выведет точную ошибку в консоль Render
         await message.answer("Произошла ошибка при обработке запроса.")
-
 # Фейковый веб-сервер для порта Render
 async def handle_health_check(request):
     return web.Response(text="Bot is live!")
