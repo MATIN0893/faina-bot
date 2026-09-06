@@ -1,10 +1,10 @@
 import os
 import asyncio
-import traceback
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from google import genai
+from google.genai import types as genai_types
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -14,13 +14,38 @@ if not BOT_TOKEN:
 if not GEMINI_KEY:
     raise RuntimeError("GEMINI_KEY is not set")
 
-client = genai.Client(api_key=GEMINI_KEY)
+# Short timeout + one SDK attempt prevents Gemini's built-in retries from
+# making Telegram users wait tens of seconds when a model is overloaded.
+client = genai.Client(
+    api_key=GEMINI_KEY,
+    http_options=genai_types.HttpOptions(
+        timeout=12000,
+        retry_options=genai_types.HttpRetryOptions(attempts=1),
+    ),
+)
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer("Привет! Я Фаина, ваш помощник. Чем могу помочь?")
+
+async def ask_gemini(prompt: str):
+    # Fast model first; reliable fallback if the first model is temporarily busy.
+    for model in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            text = getattr(response, "text", None)
+            if text:
+                return text, model
+            print(f"Gemini returned empty response from {model}")
+        except Exception as e:
+            print(f"Gemini {model} failed: {type(e).__name__}: {e}")
+    return None, None
 
 @dp.message()
 async def handle_message(message: types.Message):
@@ -31,32 +56,24 @@ async def handle_message(message: types.Message):
         "Ты Фаина — вежливый и полезный AI-помощник. "
         "Отвечай на том же языке, на котором написал пользователь. "
         "Если пользователь пишет на таджикском, отвечай на таджикском. "
-        "Не упоминай внутренние ошибки, API или технические детали.\n\n"
+        "Отвечай понятно, естественно и без упоминания API, моделей или внутренних ошибок.\n\n"
         f"Сообщение пользователя:\n{message.text}"
     )
 
-    last_error = None
-    for attempt in range(3):
-        try:
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-3.6-flash",
-                contents=prompt,
-            )
-            text = getattr(response, "text", None)
-            if text:
-                await message.answer(text)
-                return
-            last_error = "Gemini returned an empty response"
-        except Exception as e:
-            last_error = repr(e)
-            print(f"Ошибка Gemini, попытка {attempt + 1}/3: {last_error}")
-            traceback.print_exc()
-            if attempt < 2:
-                await asyncio.sleep(1.5 * (attempt + 1))
+    # Telegram shows that the bot is working while Gemini generates the answer.
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    except Exception:
+        pass
 
-    print(f"Gemini окончательно не ответил: {last_error}")
-    await message.answer("Сейчас временно не удалось получить ответ. Попробуй ещё раз через несколько секунд.")
+    text, model = await ask_gemini(prompt)
+
+    if text:
+        print(f"Gemini response OK: {model}")
+        await message.answer(text)
+    else:
+        print("Gemini failed on both primary and fallback models")
+        await message.answer("Сейчас AI временно занят. Попробуй ещё раз через несколько секунд.")
 
 async def handle_health_check(request):
     return web.Response(text="Bot is live!")
