@@ -9,7 +9,7 @@ from google import genai
 from google.genai import types as gtypes
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAF2HPogUT5TZritKmvA2UOQKIGRwIG-XHI")
-GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6JT_g3Az9mFgTYYQq2Ljw62em6y46E_sPuEOOzL3vRTWw")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6IJ-VfH6rpwXzsVe4AJeNvWVEapP8js9j3O1nQke0-ZAg")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
