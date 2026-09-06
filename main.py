@@ -9,10 +9,8 @@ from openpyxl import Workbook
 from google import genai
 from google.genai import types as gtypes
 
-# Вставь ТОЛЬКО сам токен (без текста от BotFather) внутри кавычек
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "Token for the bot Помощница Фаина @faina_school_bot has been revoked. New token is:
-
-8788964110:AAGikuaBly9IG8VqaCDE5GeCCvg4Aord8SM")
+# Укажи токен внутри кавычек (только цифры и буквы, без текста от BotFather)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAGikuaBly9IG8VqaCDE5GeCCvg4Aord8SM")
 GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6JT_g3Az9mFgTYYQq2Ljw62em6y46E_sPuEOOzL3vRTWw")
 
 bot = Bot(token=BOT_TOKEN)
