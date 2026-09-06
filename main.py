@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from google import genai
 from google.genai import types as gtypes
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAGEi92phkV4M6FH69VcsDEQ8_0kK7Orypc")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAEEmN_Qy5QMWxSgpPzacioyJ6FbPEwl0XY")
 GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6JT_g3Az9mFgTYYQq2Ljw62em6y46E_sPuEOOzL3vRTWw")
 
 bot = Bot(token=BOT_TOKEN)
