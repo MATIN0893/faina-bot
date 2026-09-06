@@ -3,46 +3,27 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
-from aiohttp import web
 from docx import Document
 from openpyxl import Workbook
 from google import genai
 from google.genai import types as gtypes
 
-# Укажи токен внутри кавычек (только цифры и буквы, без текста от BotFather)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8788964110:AAF2HPogUT5TZritKmvA2UOQKIGRwIG-XHI")
-GEMINI_KEY = os.environ.get("GEMINI_KEY", "AQ.Ab8RN6JT_g3Az9mFgTYYQq2Ljw62em6y46E_sPuEOOzL3vRTWw")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-ai_client = genai.Client(api_key=GEMINI_KEY)
-
-async def handle_health_check(request):
-    return web.Response(text="Faina Bot is alive!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle_health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     welcome_text = (
-      Ассалому алейкум! 🙋‍♀️ Я Фаина — ваш школьный помощник и секретарь.
-
-Чем я могу вам помочь сегодня?
-
-📥 Просто отправьте текст или фото страницы, а я оформлю готовые файлы Word или Excel:
-▫️ Приказы, заявления и протоколы 📄
-▫️ Рефераты и учебные материалы 📖
-▫️ Списки, таблицы и отчёты 📊
-
+        "Ассалому алейкум! Я Фаина — ваш школьный помощник и секретарь.\n\n"
+        "Я помогу вам быстро подготовить любые документы:\n"
+        "• Отправьте фото списка учеников или рукописного документа.\n"
+        "• Отправьте текст или задачу (приказы, поощрения, рефераты, таблицы).\n\n"
+        "Я приготовлю всё в формате Word или Excel с правильным таджикским алфавитом (Ғ, Ӣ, Қ, Ӯ, Ҳ, Ҷ)!"
     )
-    await message.answer(welcome_text, parse_mode="Markdown")
+    await message.answer(welcome_text)
 
 @dp.message()
 async def handle_message(message: types.Message):
@@ -55,6 +36,13 @@ async def handle_message(message: types.Message):
     )
 
     try:
+        current_gemini_key = os.environ.get("GEMINI_KEY", GEMINI_KEY)
+        if not current_gemini_key:
+            await status_msg.edit_text("Ошибка: Не указан GEMINI_KEY в настройках Render.")
+            return
+
+        ai_client = genai.Client(api_key=current_gemini_key)
+
         if message.photo:
             photo = message.photo[-1]
             file_info = await bot.get_file(photo.file_id)
@@ -95,10 +83,9 @@ async def handle_message(message: types.Message):
         await status_msg.delete()
 
     except Exception as e:
-        await status_msg.edit_text(f"Ошибка: {e}")
+        await status_msg.edit_text(f"Ошибка при обработке: {e}")
 
 async def main():
-    await start_web_server()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
