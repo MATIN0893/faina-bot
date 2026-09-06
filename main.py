@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from google import genai
 from google.genai import types as gtypes
 
-# Вставь сюда НОВЫЙ токен из BotFather
+# Вставь ТОЛЬКО сам токен (без текста от BotFather) внутри кавычек
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "Token for the bot Помощница Фаина @faina_school_bot has been revoked. New token is:
 
 8788964110:AAGikuaBly9IG8VqaCDE5GeCCvg4Aord8SM")
@@ -95,7 +95,6 @@ async def handle_message(message: types.Message):
 
 async def main():
     await start_web_server()
-    # Принудительно очищаем старые сессии и вебхуки
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
