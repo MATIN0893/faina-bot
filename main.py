@@ -17,13 +17,11 @@ if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 if not GEMINI_KEY:
     raise RuntimeError("GEMINI_KEY is not set")
-if not WEBHOOK_SECRET:
-    raise RuntimeError("WEBHOOK_SECRET is not set")
 
 client = genai.Client(
     api_key=GEMINI_KEY,
     http_options=genai_types.HttpOptions(
-        timeout=12000,
+        timeout=10000,
         retry_options=genai_types.HttpRetryOptions(attempts=1),
     ),
 )
@@ -62,6 +60,8 @@ async def handle_message(message: types.Message):
     if not message.text:
         return
 
+    print(f"Telegram message received chat_id={message.chat.id} text_len={len(message.text)}")
+
     prompt = (
         "Ты Фаина — вежливый и полезный AI-помощник. "
         "Отвечай на том же языке, на котором написал пользователь. "
@@ -75,11 +75,18 @@ async def handle_message(message: types.Message):
     except Exception:
         pass
 
-    text = await ask_gemini(prompt)
-    if text:
-        await message.answer(text)
-    else:
-        await message.answer("Сейчас AI временно занят. Попробуй ещё раз через несколько секунд.")
+    try:
+        text = await ask_gemini(prompt)
+        if text:
+            await message.answer(text)
+        else:
+            await message.answer("Сейчас AI временно занят. Попробуй ещё раз через несколько секунд.")
+    except Exception as e:
+        print(f"Telegram handler failed: {type(e).__name__}: {e}")
+        try:
+            await message.answer("Не удалось обработать сообщение. Попробуй ещё раз.")
+        except Exception:
+            pass
 
 
 async def health_check(request):
@@ -88,25 +95,35 @@ async def health_check(request):
 
 async def on_startup(bot: Bot):
     webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
+
+    # Keep the secret optional so a proxy/header issue cannot block Telegram delivery.
     await bot.set_webhook(
         url=webhook_url,
-        secret_token=WEBHOOK_SECRET,
-        drop_pending_updates=True,
+        secret_token=WEBHOOK_SECRET or None,
+        drop_pending_updates=False,
+        max_connections=20,
         allowed_updates=dp.resolve_used_update_types(),
     )
-    print(f"Webhook set: {webhook_url}")
+
+    info = await bot.get_webhook_info()
+    print(
+        "Webhook ready "
+        f"url={info.url} pending={info.pending_update_count} "
+        f"last_error={info.last_error_message!r}"
+    )
 
 
 def main():
     app = web.Application()
     app.router.add_get("/", health_check)
+    app.router.add_get("/health", health_check)
 
     dp.startup.register(on_startup)
 
     webhook_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,
-        secret_token=WEBHOOK_SECRET,
+        secret_token=WEBHOOK_SECRET or None,
         handle_in_background=True,
     )
     webhook_handler.register(app, path=WEBHOOK_PATH)
