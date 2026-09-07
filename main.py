@@ -29,6 +29,7 @@ client = genai.Client(
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+webhook_task = None
 
 
 @dp.message(CommandStart())
@@ -52,12 +53,16 @@ async def ask_gemini(prompt: str):
             text = getattr(response, "text", None)
             elapsed = time.monotonic() - started
             if text:
-                print(f"Gemini OK model={model} seconds={elapsed:.2f}")
+                print(f"Gemini OK model={model} seconds={elapsed:.2f}", flush=True)
                 return text
-            print(f"Gemini empty model={model} seconds={elapsed:.2f}")
+            print(f"Gemini empty model={model} seconds={elapsed:.2f}", flush=True)
         except Exception as e:
             elapsed = time.monotonic() - started
-            print(f"Gemini failed model={model} seconds={elapsed:.2f} error={type(e).__name__}: {e}")
+            print(
+                f"Gemini failed model={model} seconds={elapsed:.2f} "
+                f"error={type(e).__name__}: {e}",
+                flush=True,
+            )
     return None
 
 
@@ -66,7 +71,11 @@ async def handle_message(message: types.Message):
     if not message.text:
         return
 
-    print(f"Telegram message received chat_id={message.chat.id} text_len={len(message.text)}")
+    print(
+        f"Telegram message received chat_id={message.chat.id} "
+        f"text_len={len(message.text)}",
+        flush=True,
+    )
 
     prompt = (
         "Ты Фаина — вежливый и полезный AI-помощник. "
@@ -88,7 +97,7 @@ async def handle_message(message: types.Message):
         else:
             await message.answer("Сейчас AI временно занят. Попробуй ещё раз через несколько секунд.")
     except Exception as e:
-        print(f"Telegram handler failed: {type(e).__name__}: {e}")
+        print(f"Telegram handler failed: {type(e).__name__}: {e}", flush=True)
         try:
             await message.answer("Не удалось обработать сообщение. Попробуй ещё раз.")
         except Exception:
@@ -105,36 +114,61 @@ async def configure_webhook():
 
     for attempt in range(1, 4):
         try:
-            print(f"Setting Telegram webhook attempt={attempt} url={webhook_url}")
-            await bot.set_webhook(
-                url=webhook_url,
-                secret_token=WEBHOOK_SECRET or None,
-                drop_pending_updates=False,
-                max_connections=20,
-                allowed_updates=allowed_updates,
+            print(
+                f"Setting Telegram webhook attempt={attempt} url={webhook_url}",
+                flush=True,
             )
-            print("Telegram webhook set successfully")
+            await asyncio.wait_for(
+                bot.set_webhook(
+                    url=webhook_url,
+                    secret_token=WEBHOOK_SECRET or None,
+                    drop_pending_updates=False,
+                    max_connections=20,
+                    allowed_updates=allowed_updates,
+                ),
+                timeout=12,
+            )
+            print("Telegram webhook set successfully", flush=True)
 
             try:
-                info = await bot.get_webhook_info()
+                info = await asyncio.wait_for(bot.get_webhook_info(), timeout=8)
                 print(
                     "Webhook ready "
                     f"url={info.url} pending={info.pending_update_count} "
-                    f"last_error={getattr(info, 'last_error_message', None)!r}"
+                    f"last_error={getattr(info, 'last_error_message', None)!r}",
+                    flush=True,
                 )
             except Exception as e:
-                print(f"Webhook info check failed: {type(e).__name__}: {e}")
+                print(f"Webhook info check failed: {type(e).__name__}: {e}", flush=True)
             return
         except Exception as e:
-            print(f"Webhook set failed attempt={attempt}: {type(e).__name__}: {e}")
+            print(
+                f"Webhook set failed attempt={attempt}: "
+                f"{type(e).__name__}: {e}",
+                flush=True,
+            )
             if attempt < 3:
                 await asyncio.sleep(2 ** attempt)
 
-    print("Webhook setup failed after 3 attempts; service remains online")
+    print("Webhook setup failed after 3 attempts; service remains online", flush=True)
 
 
-async def on_startup(bot: Bot):
-    await configure_webhook()
+async def on_startup(app: web.Application):
+    global webhook_task
+    webhook_task = asyncio.create_task(configure_webhook())
+    app["webhook_task"] = webhook_task
+    print("Faina startup complete; webhook configuration running in background", flush=True)
+
+
+async def on_shutdown(app: web.Application):
+    task = app.get("webhook_task")
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    await bot.session.close()
 
 
 def main():
@@ -142,7 +176,8 @@ def main():
     app.router.add_get("/", health_check)
     app.router.add_get("/health", health_check)
 
-    dp.startup.register(on_startup)
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
 
     webhook_handler = SimpleRequestHandler(
         dispatcher=dp,
@@ -154,7 +189,7 @@ def main():
     setup_application(app, dp, bot=bot)
 
     port = int(os.environ.get("PORT", 10000))
-    print(f"Faina bot starting on port {port}")
+    print(f"Faina bot starting on port {port}", flush=True)
     web.run_app(app, host="0.0.0.0", port=port)
 
 
