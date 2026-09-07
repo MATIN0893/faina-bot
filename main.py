@@ -21,7 +21,7 @@ if not GEMINI_KEY:
 client = genai.Client(
     api_key=GEMINI_KEY,
     http_options=genai_types.HttpOptions(
-        timeout=10000,
+        timeout=7000,
         retry_options=genai_types.HttpRetryOptions(attempts=1),
     ),
 )
@@ -36,7 +36,8 @@ async def start_cmd(message: types.Message):
 
 
 async def ask_gemini(prompt: str):
-    for model in ("gemini-3.5-flash-lite", "gemini-3.6-flash"):
+    # Current production models, ordered for speed/reliability.
+    for model in ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"):
         started = time.monotonic()
         try:
             response = await client.aio.models.generate_content(
@@ -95,8 +96,6 @@ async def health_check(request):
 
 async def on_startup(bot: Bot):
     webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
-
-    # Keep the secret optional so a proxy/header issue cannot block Telegram delivery.
     await bot.set_webhook(
         url=webhook_url,
         secret_token=WEBHOOK_SECRET or None,
