@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from aiohttp import web
@@ -21,7 +22,7 @@ if not GEMINI_KEY:
 client = genai.Client(
     api_key=GEMINI_KEY,
     http_options=genai_types.HttpOptions(
-        timeout=7000,
+        timeout=15000,
         retry_options=genai_types.HttpRetryOptions(attempts=1),
     ),
 )
@@ -36,8 +37,12 @@ async def start_cmd(message: types.Message):
 
 
 async def ask_gemini(prompt: str):
-    # Current production models, ordered for speed/reliability.
-    for model in ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"):
+    for model in (
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+    ):
         started = time.monotonic()
         try:
             response = await client.aio.models.generate_content(
@@ -94,22 +99,42 @@ async def health_check(request):
     return web.Response(text="Bot is live!")
 
 
-async def on_startup(bot: Bot):
+async def configure_webhook():
     webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
-    await bot.set_webhook(
-        url=webhook_url,
-        secret_token=WEBHOOK_SECRET or None,
-        drop_pending_updates=False,
-        max_connections=20,
-        allowed_updates=dp.resolve_used_update_types(),
-    )
+    allowed_updates = dp.resolve_used_update_types()
 
-    info = await bot.get_webhook_info()
-    print(
-        "Webhook ready "
-        f"url={info.url} pending={info.pending_update_count} "
-        f"last_error={info.last_error_message!r}"
-    )
+    for attempt in range(1, 4):
+        try:
+            print(f"Setting Telegram webhook attempt={attempt} url={webhook_url}")
+            await bot.set_webhook(
+                url=webhook_url,
+                secret_token=WEBHOOK_SECRET or None,
+                drop_pending_updates=False,
+                max_connections=20,
+                allowed_updates=allowed_updates,
+            )
+            print("Telegram webhook set successfully")
+
+            try:
+                info = await bot.get_webhook_info()
+                print(
+                    "Webhook ready "
+                    f"url={info.url} pending={info.pending_update_count} "
+                    f"last_error={getattr(info, 'last_error_message', None)!r}"
+                )
+            except Exception as e:
+                print(f"Webhook info check failed: {type(e).__name__}: {e}")
+            return
+        except Exception as e:
+            print(f"Webhook set failed attempt={attempt}: {type(e).__name__}: {e}")
+            if attempt < 3:
+                await asyncio.sleep(2 ** attempt)
+
+    print("Webhook setup failed after 3 attempts; service remains online")
+
+
+async def on_startup(bot: Bot):
+    await configure_webhook()
 
 
 def main():
