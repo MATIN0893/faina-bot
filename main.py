@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import BufferedInputFile
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from docx import Document
@@ -99,7 +99,7 @@ async def start_cmd(message: types.Message):
     )
 
 
-@dp.message(commands={"help"})
+@dp.message(Command("help"))
 async def help_cmd(message: types.Message):
     await message.answer(
         "Фаина умеет:\n"
@@ -254,8 +254,7 @@ async def photo_handler(message: types.Message):
                 return
             summary = str(data.get("document_text") or "").strip()
             if summary:
-                preview = summary[:2500]
-                await message.answer("📷 Распознано:\n\n" + preview)
+                await message.answer("📷 Распознано:\n\n" + summary[:2500])
             await send_file_pair(message, data, word=True, excel=True)
         except Exception as e:
             print(f"Photo handler failed: {type(e).__name__}: {e}", flush=True)
