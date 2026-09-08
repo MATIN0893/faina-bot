@@ -5,6 +5,7 @@ import os
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
@@ -22,10 +23,15 @@ from openpyxl.utils import get_column_letter
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
-BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://faina-bot-new.onrender.com").rstrip("/")
+BASE_URL = (os.getenv("RENDER_EXTERNAL_URL") or os.getenv("BASE_URL") or "").rstrip("/")
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 MAX_TEXT = 12000
+
+configured_models = os.getenv("GEMINI_MODELS", "gemini-2.5-flash,gemini-2.0-flash")
+MODELS = tuple(model.strip() for model in configured_models.split(",") if model.strip())
+if not MODELS:
+    MODELS = ("gemini-2.5-flash",)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
@@ -43,14 +49,7 @@ client = genai.Client(
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 chat_locks: dict[int, asyncio.Lock] = {}
-webhook_task = None
-MODELS = (
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
-)
+runtime_task = None
 
 
 def lock_for(chat_id: int) -> asyncio.Lock:
@@ -358,6 +357,10 @@ async def health_check(request: web.Request):
 
 
 async def configure_webhook():
+    parsed_url = urlparse(BASE_URL)
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        print("A valid HTTPS RENDER_EXTERNAL_URL or BASE_URL is required for webhook", flush=True)
+        return False
     webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
     allowed_updates = dp.resolve_used_update_types()
     for attempt in range(1, 4):
@@ -375,26 +378,45 @@ async def configure_webhook():
             )
             info = await asyncio.wait_for(bot.get_webhook_info(), timeout=8)
             print(f"Telegram webhook set successfully pending={info.pending_update_count} last_error={info.last_error_message!r}", flush=True)
-            return
+            return True
         except Exception as e:
             print(f"Webhook setup failed attempt={attempt}: {type(e).__name__}: {e}", flush=True)
             await asyncio.sleep(attempt * 2)
     print("Webhook setup exhausted retries; server remains available", flush=True)
+    return False
+
+
+async def run_polling():
+    print("Starting Telegram polling because no valid webhook URL is configured", flush=True)
+    await bot.delete_webhook(drop_pending_updates=False)
+    await dp.start_polling(bot, handle_signals=False)
+
+
+async def run_runtime():
+    if BASE_URL and urlparse(BASE_URL).scheme == "https" and urlparse(BASE_URL).netloc:
+        if await configure_webhook():
+            return
+        print("Webhook setup failed; switching to polling", flush=True)
+    await run_polling()
 
 
 async def on_startup(app: web.Application):
-    global webhook_task
-    print(f"Faina bot starting on port={os.getenv('PORT', 'unknown')} base_url={BASE_URL}", flush=True)
-    webhook_task = asyncio.create_task(configure_webhook())
-    print("Faina startup complete; webhook configuration running in background", flush=True)
+    global runtime_task
+    print(
+        f"Faina bot starting on port={os.getenv('PORT', 'unknown')} "
+        f"base_url={BASE_URL or '<not configured>'} models={','.join(MODELS)}",
+        flush=True,
+    )
+    runtime_task = asyncio.create_task(run_runtime())
+    print("Faina startup complete; Telegram update loop running in background", flush=True)
 
 
 async def on_shutdown(app: web.Application):
-    global webhook_task
-    if webhook_task:
-        webhook_task.cancel()
+    global runtime_task
+    if runtime_task:
+        runtime_task.cancel()
         try:
-            await webhook_task
+            await runtime_task
         except asyncio.CancelledError:
             pass
     try:
