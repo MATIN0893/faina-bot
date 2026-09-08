@@ -26,7 +26,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(result.status, "found")
         self.assertEqual(result.row["work_price"], "3500")
 
-    def test_price_search_does_not_treat_missing_service_as_missing_model(self):
+    def test_price_search_reports_missing_service(self):
         result = search_rows(
             [{"model": "iPhone 13", "service": "Замена дисплея"}],
             "iPhone 13 замена аккумулятора",

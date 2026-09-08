@@ -129,11 +129,15 @@ class GoogleSheetsPriceCatalog:
         spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
         if not credentials or not spreadsheet_id:
             return None
+        try:
+            cache_seconds = max(0, int(os.getenv("GOOGLE_SHEETS_CACHE_SECONDS", "60")))
+        except ValueError:
+            cache_seconds = 60
         return cls(
             credentials,
             spreadsheet_id,
             os.getenv("GOOGLE_SHEET_RANGE", "Sheet1!A:Z"),
-            int(os.getenv("GOOGLE_SHEETS_CACHE_SECONDS", "60")),
+            cache_seconds,
         )
 
     def _read_rows(self) -> list[dict[str, Any]]:
