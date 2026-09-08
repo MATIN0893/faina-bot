@@ -20,6 +20,7 @@ from google.genai import types as genai_types
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
+from price_catalog import GoogleSheetsPriceCatalog
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -100,8 +101,19 @@ async def ask_gemini(contents: Any, system_prompt: str = "") -> str | None:
 SYSTEM_PROMPT = (
     "Ты Фаина — полезный AI-помощник. Отвечай на языке пользователя. "
     "Поддерживай русский и таджикский, включая таджикские буквы Ғ Ӣ Қ Ӯ Ҳ Ҷ. "
-    "Не выдумывай данные. Не упоминай внутренние API, модели или служебные ошибки."
+    "Не выдумывай данные. Не называй цену, если она не пришла из подключенного прайса. "
+    "Если найденный прайс не содержит цену, переводи запрос мастеру. "
+    "Не упоминай внутренние API, модели или служебные ошибки."
 )
+
+price_catalog = GoogleSheetsPriceCatalog.from_environment()
+
+
+def price_request(text: str) -> bool:
+    normalized = text.casefold()
+    brands = ("iphone", "айфон", "samsung", "xiaomi", "redmi", "poco", "tecno", "infinix", "honor", "realme", "oppo")
+    services = ("цена", "стоимость", "ремонт", "замена", "экран", "дисплей", "акб", "батаре", "заряд", "динамик", "кнопк")
+    return any(item in normalized for item in brands) and any(item in normalized for item in services)
 
 
 @dp.message(CommandStart())
@@ -338,7 +350,17 @@ async def text_handler(message: types.Message):
         if wants_word or wants_excel:
             await generate_document_from_text(message, text, wants_word, wants_excel)
             return
-        prompt = SYSTEM_PROMPT + "\n\nСообщение пользователя:\n" + text[:MAX_TEXT]
+        catalog_context = ""
+        if price_request(text):
+            if not price_catalog:
+                await message.answer("Контакты Мастера:\nДля точного расчёта стоимости свяжитесь напрямую с мастером.\n👉 Telegram: @MATIN_0893 @Coichi")
+                return
+            result = await price_catalog.lookup(text)
+            if result.status in {"error", "not_found"}:
+                await message.answer("Контакты Мастера:\nДля точного расчёта стоимости свяжитесь напрямую с мастером.\n👉 Telegram: @MATIN_0893 @Coichi")
+                return
+            catalog_context = "\nТочная строка прайса (используй только эти значения):\n" + json.dumps(result.row, ensure_ascii=False)
+        prompt = SYSTEM_PROMPT + catalog_context + "\n\nСообщение пользователя:\n" + text[:MAX_TEXT]
         answer = await ask_gemini(prompt)
         if answer:
             for i in range(0, len(answer), 4000):
