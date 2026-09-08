@@ -1,15 +1,33 @@
-name: Gemini Action
-on: [push]
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  run-gemini:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Gemini CLI
-        uses: google-github-actions/run-gemini-cli@v0.1.22
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          api_key: ${{ secrets.GEMINI_API_KEY }}
-          
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Compile Python files
+        run: python -m py_compile main.py price_catalog.py test_main.py
+
+      - name: Run tests
+        env:
+          BOT_TOKEN: "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk"
+          GEMINI_KEY: test-key
+        run: python -m unittest -v
+
